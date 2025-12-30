@@ -2,87 +2,44 @@ import fs from 'fs/promises';
 import path from 'path';
 import readline from 'readline';
 import os from 'os';
+import { getConfigPath, getConfig, saveConfig, initConfigFile, fileExists } from './config.js';
 
-const configFileName = 'bbdb_config.json';
-const userHomeDir = os.homedir();
-const configFilePath = path.join(userHomeDir, configFileName);
-const databaseFolderName = 'bbdb'; // Root folder for databases
-const rootDatabasePath = path.join(userHomeDir, databaseFolderName);
-const log_file_path  = path.join(rootDatabasePath, "rest_logs.txt");
+const databaseFolderName = 'bbdb';
+const rootDatabasePath = path.join(os.homedir(), databaseFolderName);
+const logFilePath = path.join(rootDatabasePath, 'rest_logs.txt');
 
-const validateDatabaseName = (dbName) => /^[a-zA-Z1-9]+$/.test(dbName);
-
-const generate_random_code = ()=>{
-  const randomNumber = Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000; // Generate a random number between 100000 and 999999
-  return randomNumber.toString(16)
-}
-
-export const initConfigFile = async () => {
-  const defaultConfig = { 
-    database: {}, 
-    rest:{
-      jwt:`${generate_random_code()}${generate_random_code()}${generate_random_code()}${generate_random_code()}`,
-      jwt_expiry: 60,
-      log_file_path: log_file_path
-    }
-  };
-  await fs.writeFile(configFilePath, JSON.stringify(defaultConfig, null, 2));
-};
-
-const fileExists = async (filePath) => {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-
-export const getConfig = async () => {
-  try {
-    const configData = await fs.readFile(configFilePath, 'utf8');
-    return JSON.parse(configData);
-  } catch (err) {
-    console.error('Error reading the config file:', err);
-    process.exit(1);
-  }
-};
-
-export const saveConfig = async (config) => {
-  try {
-    await fs.writeFile(configFilePath, JSON.stringify(config, null, 2));
-  } catch (err) {
-    console.error('Error saving the config file:', err);
-    process.exit(1);
-  }
-};
-
-
+const validateDatabaseName = (dbName) => /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(dbName);
 
 export const listDatabases = async () => {
-  if (await fileExists(configFilePath)) {
-    const config = await getConfig();
-    if (config.databases.length > 0) {
-      console.log('Defined databases:');
-      config.databases.forEach(db => {
-        console.log(`- ${db.name} (${db.folder_link})`);
-      });
-    } else {
-      console.log('No databases defined. Use "bbdb new-db <database-name>" to add one.');
-    }
-  } else {
-    console.log('Configuration file missing. Use "bbdb new-db <database-name>" to create.');
-  }
-};
-
-export const addDatabase = async (dbName) => {
-  if (!validateDatabaseName(dbName)) {
-    console.error('Invalid database name. Please use a single word with alphabets only.');
+  if (!(await fileExists(getConfigPath()))) {
+    console.log('Configuration file missing. Use `bbdb new-db database-name` to create.');
     return;
   }
 
-  if (!await fileExists(configFilePath)) {
+  const config = await getConfig();
+  if (Object.keys(config.database).length === 0) {
+    console.log('No databases defined. Use `bbdb new-db database-name` to add one.');
+  } else {
+    console.log('Defined databases:');
+    Object.entries(config.database).forEach(([name, db]) => {
+      console.log(`- ${name} (${db.folderlink || 'no folder'})`);
+    });
+  }
+};
+
+export const addDatabase = async (args) => {
+  if (args.length !== 1) {
+    console.error('Usage: bbdb new-db <database-name>');
+    return;
+  }
+
+  const dbName = args[0];
+  if (!validateDatabaseName(dbName)) {
+    console.error('Invalid database name. Please use a single word with letters, numbers, underscores, or hyphens (alphanumeric with no spaces).');
+    return;
+  }
+
+  if (!(await fileExists(getConfigPath()))) {
     console.log('Configuration file missing, creating a new one.');
     await initConfigFile();
   }
@@ -93,10 +50,10 @@ export const addDatabase = async (dbName) => {
     return;
   }
 
-   // Ensure the root database folder exists
-   if (!await fileExists(rootDatabasePath)) {
+  // Ensure root database folder exists
+  if (!(await fileExists(rootDatabasePath))) {
     await fs.mkdir(rootDatabasePath);
-    console.log(`Root folder "${rootDatabasePath}" created.`);
+    console.log(`Root folder ${rootDatabasePath} created.`);
   }
 
   const rl = readline.createInterface({
@@ -104,42 +61,43 @@ export const addDatabase = async (dbName) => {
     output: process.stdout,
   });
 
-  const prompt = (question) => new Promise((resolve) =>
-    rl.question(question, resolve)
-  );
+  const prompt = (question) => new Promise((resolve) => {
+    rl.question(question, resolve);
+  });
 
-  // const type = await prompt('Database Type : ');
-  // const validTypes = ['couchdb'];
-  // if (!validTypes.includes(type.toLowerCase())) {
-  //   console.error('Invalid database type. Valid options are "couchdb" or "mongodb".');
-  //   rl.close();
-  //   return;
-  // }
+  const type = await prompt('Database Type [couchdb]: ') || 'couchdb';
+  const validTypes = ['couchdb'];
+  if (!validTypes.includes(type.toLowerCase())) {
+    console.error('Invalid database type. Valid options are: couchdb');
+    rl.close();
+    return;
+  }
 
   const url = await prompt('Database URL: ');
   const encryptionKey = await prompt('Encryption Key: ');
-  // const doc_folder = await prompt('Folder link: () ');
+  const docFolder = await prompt('Folder link: ');
   rl.close();
 
-  // Create a subfolder for the database
+  // Create database folder
   const dbFolderPath = path.join(rootDatabasePath, dbName);
-  if (!await fileExists(dbFolderPath)) {
+  if (!(await fileExists(dbFolderPath))) {
     await fs.mkdir(dbFolderPath);
-    console.log(`Database folder "${dbFolderPath}" created.`);
+    console.log(`Database folder ${dbFolderPath} created.`);
   } else {
-    console.log(`Database folder "${dbFolderPath}" already exists.`);
+    console.log(`Database folder ${dbFolderPath} already exists.`);
   }
 
-  config.database[dbName]= {
+  config.database[dbName] = {
     name: dbName,
-    type: "couchdb",
+    type: type.toLowerCase(),
     url,
     encryption_key: encryptionKey,
-    folder_link: dbFolderPath,
-    created:Math.floor(Date.now() / 1000)
+    folderlink: docFolder,
+    created: Math.floor(Date.now() / 1000)
   };
 
   await saveConfig(config);
-  console.log(`Database "${dbName}" added successfully.You can now use it with the CLI and the REST API`);
+  console.log(`\nDatabase "${dbName}" added successfully!`);
+  console.log(`Config saved to: ${getConfigPath()}`);
+  console.log(`\nYou can now use it with the CLI and REST API.`);
 };
-

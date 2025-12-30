@@ -1,4 +1,17 @@
-# beanbagdb-library
+# beanbagdb-cli
+
+
+## Installation
+
+
+## Usage 
+
+
+
+## Setup rest server
+
+
+
 Various plugins and apps that can be installed in BeanBagDB
 
 

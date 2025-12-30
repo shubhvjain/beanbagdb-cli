@@ -135,3 +135,5 @@ temp
 notes.txt
 
 couchdb_instances.json
+
+.DS_Store
