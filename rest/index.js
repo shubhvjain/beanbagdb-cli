@@ -131,6 +131,7 @@ app.post('/hi', (req, res) => {
   if (!database || !user) {return res.status(400).json({ error: 'Both database and user are required' });}
 
   // Check if the database exists in the config
+  // console.log(req.body)
   if (!config.database || !config.database[database]) {return res.status(400).json({ error: 'Database not defined in config' });}
 
   // Default expiry from config
